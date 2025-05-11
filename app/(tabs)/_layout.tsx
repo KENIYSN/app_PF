@@ -32,7 +32,16 @@ export default function TabsLayout() {
           )
         }}
       />
-      
+       <Tabs.Screen 
+  name="objectives" 
+  options={{
+    tabBarLabel: 'Objectifs',
+    tabBarIcon: ({ color }) => {
+      console.log('Rendering objectives tab');
+      return <Ionicons name="trophy-outline" size={24} color={color} />;
+    }
+  }}
+/>
     </Tabs>
   );
 }
