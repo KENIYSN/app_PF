@@ -251,7 +251,11 @@ const dashboard = () => {
               originY={size / 2}
             />
           </Svg>
-          <Text style={styles.kcalText}>{displayedKcal.value}</Text>
+          <View style={styles.stepsGoalContainer}>
+            <Text style={styles.kcalText}>{steps}
+              <Text style={styles.goalText}> / {goalSteps}</Text>
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -341,7 +345,7 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
   },
   goalText: {
-    color: Theme.colors.dark,
+    color: Theme.colors.white,
     fontFamily: Theme.fonts.bold,
     fontSize: Theme.fontSizes.sm,
   },
@@ -367,8 +371,15 @@ const styles = StyleSheet.create({
     color: Theme.colors.primary,
     marginBottom: Theme.spacing.xs,
   },
+  stepsGoalContainer: {
+    position: 'absolute',
+    top: '50%',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    transform: [{ translateY: -16 }],
+  },
   kcalText: {
-    position: "absolute",
     fontSize: Theme.fontSizes.lg,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.white,
