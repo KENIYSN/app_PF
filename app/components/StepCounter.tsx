@@ -2,18 +2,20 @@ import React, { useEffect, useRef, useState } from "react";
 import { Pedometer } from "expo-sensors";
 import { Platform, PermissionsAndroid, Alert } from "react-native";
 import Constants from "expo-constants";
-import { updateActivityCache } from "../utils/activityManager";
+import { updateActivityCache, getActivityCache } from "../utils/activityManager";
 
 interface StepCounterProps {
   onStepsChanged: (steps: number, distance: number, calories: number) => void;
   userId?: string;
+  initialSteps?: number;
 }
 
-const StepCounter: React.FC<StepCounterProps> = ({ onStepsChanged, userId }) => {
+const StepCounter: React.FC<StepCounterProps> = ({ onStepsChanged, userId, initialSteps = 0 }) => {
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null);
   const baselineSteps = useRef<number>(0);
-  const currentSteps = useRef<number>(0);
+  const currentSteps = useRef<number>(initialSteps);
   const subscriptionRef = useRef<any>(null);
+  const lastStepCount = useRef<number>(0);
 
   const checkPermissions = async (): Promise<boolean> => {
     try {
@@ -54,9 +56,10 @@ const StepCounter: React.FC<StepCounterProps> = ({ onStepsChanged, userId }) => 
         return;
       }
 
-      // Réinitialiser les compteurs pour un nouvel utilisateur
-      baselineSteps.current = 0;
-      currentSteps.current = 0;
+      // Initialiser avec les pas existants
+      baselineSteps.current = initialSteps;
+      currentSteps.current = initialSteps;
+      lastStepCount.current = 0;
 
       if (Platform.OS === 'ios') {
         const startOfDay = new Date();
@@ -72,22 +75,29 @@ const StepCounter: React.FC<StepCounterProps> = ({ onStepsChanged, userId }) => 
 
       subscriptionRef.current = Pedometer.watchStepCount((result) => {
         const newSteps = Platform.OS === 'ios' 
-          ? result.steps // On utilise directement les pas du watchStepCount pour iOS
+          ? result.steps
           : result.steps;
 
-        if (newSteps > currentSteps.current) {
-          currentSteps.current = newSteps;
-          const distance = newSteps * 0.000762;
-          const calories = Math.round(newSteps * 0.04);
+        // Calculer la différence depuis le dernier pas
+        const stepDifference = newSteps - lastStepCount.current;
+        if (stepDifference > 0) {
+          // Ajouter la différence aux pas actuels
+          currentSteps.current += stepDifference;
+          lastStepCount.current = newSteps;
 
-          onStepsChanged(newSteps, distance, calories);
+          const totalSteps = currentSteps.current;
+          const distance = totalSteps * 0.000762;
+          const calories = Math.round(totalSteps * 0.04);
+
+          onStepsChanged(totalSteps, distance, calories);
           
           if (userId) {
             updateActivityCache({
-              steps: newSteps,
+              steps: totalSteps,
               distance,
               calories,
-              userId
+              userId,
+              timestamp: Date.now()
             }).catch(console.error);
           }
         }
@@ -107,7 +117,7 @@ const StepCounter: React.FC<StepCounterProps> = ({ onStepsChanged, userId }) => 
         subscriptionRef.current.remove();
       }
     };
-  }, [userId]);
+  }, [userId, initialSteps]);
 
   return null;
 };

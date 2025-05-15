@@ -37,7 +37,7 @@ const CreateObjectivesCalories = () => {
       });
 
       
-      router.push("/objectives");
+      router.push("../objectives");
     } else {
       console.log("Utilisateur non authentifié");
     }

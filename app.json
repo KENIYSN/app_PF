@@ -53,6 +53,12 @@
         "fontFamily": "Poppins-Bold",
         "src": "./assets/fonts/Poppins-Bold.ttf"
       }
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "4de028b7-7ef0-408e-aa4a-befceedf2162"
+      }
+    }
   }
 }

@@ -87,11 +87,20 @@ const dashboard = () => {
         const wasSynced = await checkAndSyncIfNeeded(auth.currentUser.uid);
         if (wasSynced) {
           // Recharger les données après sync
-          const freshData = await loadActivityData(auth.currentUser.uid);
-          setSteps(freshData.steps);
-          setDistance(freshData.distance);
-          setCalories(freshData.calories);
-          setLastSyncTime(freshData.timestamp);
+          const activity = await loadActivityData(auth.currentUser.uid);
+          const cache = await getActivityCache();
+          
+          const combinedData = {
+            steps: activity.steps + (cache.userId === auth.currentUser.uid ? cache.steps : 0),
+            distance: activity.distance + (cache.userId === auth.currentUser.uid ? cache.distance : 0),
+            calories: activity.calories + (cache.userId === auth.currentUser.uid ? cache.calories : 0),
+            timestamp: Math.max(activity.timestamp, cache.timestamp)
+          };
+
+          setSteps(combinedData.steps);
+          setDistance(combinedData.distance);
+          setCalories(combinedData.calories);
+          setLastSyncTime(combinedData.timestamp);
         }
       } catch (error) {
         console.error('Auto-sync error:', error);
@@ -135,16 +144,29 @@ const dashboard = () => {
 
     try {
       await onUserLogin(userId);
+      
+      // Charger les données de Firestore
       const activity = await loadActivityData(userId);
       
-      setSteps(activity.steps);
-      setDistance(activity.distance);
-      setCalories(activity.calories);
-      setLastSyncTime(activity.timestamp);
+      // Récupérer le cache local
+      const cache = await getActivityCache();
+      
+      // Combiner les données Firestore avec le cache local
+      const combinedData = {
+        steps: activity.steps + (cache.userId === userId ? cache.steps : 0),
+        distance: activity.distance + (cache.userId === userId ? cache.distance : 0),
+        calories: activity.calories + (cache.userId === userId ? cache.calories : 0),
+        timestamp: Math.max(activity.timestamp, cache.timestamp)
+      };
+      
+      setSteps(combinedData.steps);
+      setDistance(combinedData.distance);
+      setCalories(combinedData.calories);
+      setLastSyncTime(combinedData.timestamp);
       setActivityLoaded(true);
 
       // Vérifier immédiatement si besoin de sync
-      if (Date.now() - activity.timestamp > CACHE_DURATION) {
+      if (Date.now() - combinedData.timestamp > CACHE_DURATION) {
         await checkAndSyncIfNeeded(userId);
       }
     } catch (error) {

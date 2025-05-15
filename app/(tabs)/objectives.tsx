@@ -5,12 +5,12 @@ import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView } from
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/core';
-import { getDailyActivity } from '../utils/getDailyActivity';
 import { getObjectivesByUser } from '../utils/getObjectives';
 import { auth } from '../../lib/firebase';
 import { Theme } from '../../lib/theme';
 import { AnimatedProgressCircle } from '../components/ObjectivesCircleAnim';
 import Animated, { useSharedValue, withTiming } from 'react-native-reanimated';
+import { loadActivityData, checkAndSyncIfNeeded, getActivityCache } from '../utils/activityManager';
 
 const { width } = Dimensions.get('window');
 const CIRCLE_SIZE = width * 0.5;
@@ -26,33 +26,69 @@ const Objectives = () => {
 
   useFocusEffect(
     useCallback(() => {
-      const loadActivityData = async () => {
+      const loadData = async () => {
         const user = auth.currentUser;
         if (!user) return;
 
-        const activityData = await getDailyActivity();
-        const userObjectives = await getObjectivesByUser(user.uid);
+        try {
+          // Vérifier et synchroniser si nécessaire
+          await checkAndSyncIfNeeded(user.uid);
+          
+          // Charger les données d'activité depuis Firestore
+          const activityData = await loadActivityData(user.uid);
+          
+          // Récupérer le cache local
+          const cache = await getActivityCache();
+          
+          // Combiner les données Firestore avec le cache local
+          const combinedData = {
+            steps: activityData.steps + (cache.userId === user.uid ? cache.steps : 0),
+            calories: activityData.calories + (cache.userId === user.uid ? cache.calories : 0),
+            distance: activityData.distance + (cache.userId === user.uid ? cache.distance : 0)
+          };
 
-        if (activityData) {
-          setSteps(activityData.steps);
-          setCalories(activityData.calories);
-          setDistance(activityData.distance);
+          // Mettre à jour l'état avec les données combinées
+          setSteps(combinedData.steps);
+          setCalories(combinedData.calories);
+          setDistance(combinedData.distance);
+
+          // Charger les objectifs
+          const userObjectives = await getObjectivesByUser(user.uid);
+          setObjectives(userObjectives);
+
+        } catch (error) {
+          console.error("Erreur lors du chargement des données:", error);
         }
-
-        setObjectives(userObjectives);
       };
 
-      loadActivityData();
+      loadData();
     }, [])
   );
 
   // Calcul du pourcentage global moyen
   const getGlobalPercentage = () => {
-    const total = (objectives.steps || 1) + (objectives.calories || 1) + (objectives.distance || 1);
-    const current = steps + calories + distance;
-    return Math.min((current / total) * 100, 100); // max 100%
+    // Créer un tableau des objectifs définis (non nuls et non zéro)
+    const definedObjectives = [
+      objectives.steps > 0 ? { current: steps, target: objectives.steps } : null,
+      objectives.calories > 0 ? { current: calories, target: objectives.calories } : null,
+      objectives.distance > 0 ? { current: distance, target: objectives.distance } : null
+    ].filter(obj => obj !== null);
+
+    // Si aucun objectif n'est défini, retourner 0
+    if (definedObjectives.length === 0) return 0;
+
+    // Calculer la moyenne des pourcentages pour chaque objectif défini
+    const totalPercentage = definedObjectives.reduce((sum, obj) => {
+      if (!obj) return sum;
+      const percentage = (obj.current / obj.target) * 100;
+      return sum + Math.min(percentage, 100); // Limiter à 100%
+    }, 0);
+
+    return totalPercentage / definedObjectives.length;
   };
+
   const displayedPercentage = Math.round(getGlobalPercentage());
+
   useEffect(() => {
     const percentage = getGlobalPercentage() / 100;
     globalProgress.value = withTiming(percentage, { duration: 1000 });
@@ -65,45 +101,48 @@ const Objectives = () => {
 
         <View style={styles.circleContainer}>
           <View style={styles.circleWrapper}>
-  <AnimatedProgressCircle progress={globalProgress} />
-
-  {/* Icône bien centrée dans le cercle */}
-  <MaterialCommunityIcons
-    name="bullseye-arrow"
-    size={48}
-    color="#FFA500"
-    style={styles.centerIcon}
-  />
-</View>
+            <AnimatedProgressCircle progress={globalProgress} />
+            <MaterialCommunityIcons
+              name="bullseye-arrow"
+              size={48}
+              color="#FFA500"
+              style={styles.centerIcon}
+            />
+          </View>
           <Text style={styles.percentageText}>{displayedPercentage}%</Text>
         </View>
 
         <View style={styles.statsContainer}>
           <View style={styles.statBox}>
             <Ionicons name="walk" size={20} color="white" />
-            <Text style={styles.statValue}>{steps} / {objectives.steps}</Text>
+            <Text style={styles.statValue}>
+              {objectives.steps > 0 ? `${steps} / ${objectives.steps}` : 0}
+            </Text>
             <Text style={styles.statLabel}>Steps</Text>
           </View>
 
           <View style={styles.statBox}>
             <Ionicons name="flame" size={20} color="white" />
-            <Text style={styles.statValue}>{calories} / {objectives.calories}</Text>
+            <Text style={styles.statValue}>
+              {objectives.calories > 0 ? `${calories} / ${objectives.calories}` : 0}
+            </Text>
             <Text style={styles.statLabel}>Kcal</Text>
           </View>
 
           <View style={styles.statBox}>
             <Ionicons name="map" size={20} color="white" />
-            <Text style={styles.statValue}>{Number(distance).toFixed(2)} / {objectives.distance}</Text>
+            <Text style={styles.statValue}>
+              {objectives.distance > 0 ? `${Number(distance).toFixed(2)} / ${objectives.distance}` : 0}
+            </Text>
             <Text style={styles.statLabel}>Km</Text>
           </View>
         </View>
 
         <View style={styles.listContainer}>
-        <TouchableOpacity 
-  style={styles.listItem}
-  onPress={() => router.push('../CreateObjectives/CreateObjectivesStep?goalType=steps')}
->
-
+          <TouchableOpacity 
+            style={styles.listItem}
+            onPress={() => router.push('../CreateObjectives/CreateObjectivesStep?goalType=steps')}
+          >
             <View style={styles.listItemLeft}>
               <Ionicons name="walk" size={20} color="#5F5FFF" style={{ marginRight: 10 }} />
               <Text style={styles.listItemText}>Steps</Text>
@@ -112,10 +151,9 @@ const Objectives = () => {
           </TouchableOpacity>
 
           <TouchableOpacity 
-  style={styles.listItem}
-  onPress={() => router.push('../CreateObjectives/CreateObjectivesCalories?goalType=calories')}
->
-
+            style={styles.listItem}
+            onPress={() => router.push('../CreateObjectives/CreateObjectivesCalories?goalType=calories')}
+          >
             <View style={styles.listItemLeft}>
               <Ionicons name="flame" size={20} color="#FF5F5F" style={{ marginRight: 10 }} />
               <Text style={styles.listItemText}>Les calories</Text>
@@ -124,10 +162,9 @@ const Objectives = () => {
           </TouchableOpacity>
 
           <TouchableOpacity 
-  style={styles.listItem}
-  onPress={() => router.push('../CreateObjectives/CreateObjectivesDistance?goalType=distance')}
->
-
+            style={styles.listItem}
+            onPress={() => router.push('../CreateObjectives/CreateObjectivesDistance?goalType=distance')}
+          >
             <View style={styles.listItemLeft}>
               <Ionicons name="map" size={20} color="#5FCFFF" style={{ marginRight: 10 }} />
               <Text style={styles.listItemText}>La distance</Text>
@@ -142,7 +179,7 @@ const Objectives = () => {
 
 const styles = StyleSheet.create({
   scrollContainer: {
-    paddingBottom: 40,
+    flex: 1,
     backgroundColor: Theme.colors.dark, 
   },
   container: {
@@ -154,7 +191,7 @@ const styles = StyleSheet.create({
     fontSize: Theme.fontSizes.xxl,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.primary,
-    marginVertical: Theme.spacing.lg,
+    marginVertical: Theme.spacing.xl,
     marginHorizontal: Theme.spacing.md,
   },
   circleContainer: {
